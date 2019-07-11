@@ -34,10 +34,10 @@ public class ScInOL implements Learner {
     private transient double[] maxFeature;
     private transient double[] eta;
 
-
+    private boolean clipGradient;
     private Loss lossFnc;
     private double L = 1;
-    private int sizeHash = 0;
+    private int sizeHash;
 
     public ScInOL(int bits, double L, double epsilon) {
         this.sizeHash = 1 << bits;
@@ -49,12 +49,18 @@ public class ScInOL implements Learner {
         eta = new double[this.sizeHash];
         this.L = L;
         this.setLearningRate(epsilon);
+        this.clipGradient = true;
     }
 
     public ScInOL(int bits) {
         this(bits, 1.0, 1.0);
     }
 
+
+    public void setClipGradient(boolean f)
+    {
+        this.clipGradient = f;
+    }
     public double update(Instance sample) {
         double pred = 0;
         for (Int2DoubleMap.Entry entry : sample.getVector().int2DoubleEntrySet()) {
@@ -70,17 +76,20 @@ public class ScInOL implements Learner {
             final double theta_i = g_i / denominator;
             this.w[i] = Math.signum(theta_i) * Math.min(1, Math.abs(theta_i)) / (2 * denominator) * eta_i;
 
-            pred += x_i * w[i];
+            pred += x_i * this.w[i];
         }
 
-        final double negativeGrad = lossFnc.negativeGradient(pred, sample.getLabel(), sample.getWeight());
-
+        double negativeGrad = this.lossFnc.negativeGradient(pred, sample.getLabel(), sample.getWeight());
+        if (this.clipGradient) {
+            negativeGrad = Math.min(negativeGrad,L);
+            negativeGrad = Math.max(negativeGrad,-L);
+        }
         for (Int2DoubleMap.Entry entry : sample.getVector().int2DoubleEntrySet()) {
             final int key = entry.getIntKey();
             final double x_i = entry.getDoubleValue();
             this.sumGradient[key] += x_i * negativeGrad;
             this.sumSquaredGradient[key] += Math.pow(x_i * negativeGrad, 2);
-            this.eta[key] += x_i * negativeGrad * w[key];
+            this.eta[key] += x_i * negativeGrad * this.w[key];
         }
 
         return pred;
@@ -130,10 +139,10 @@ public class ScInOL implements Learner {
 
     private void readObject(ObjectInputStream o) throws IOException, ClassNotFoundException {
         o.defaultReadObject();
-        w = ((SparseVector) o.readObject()).toDenseVector(sizeHash);
-        sumGradient = ((SparseVector) o.readObject()).toDenseVector(sizeHash);
-        sumSquaredGradient = ((SparseVector) o.readObject()).toDenseVector(sizeHash);
-        maxFeature = ((SparseVector) o.readObject()).toDenseVector(sizeHash);
-        eta = ((SparseVector) o.readObject()).toDenseVector(sizeHash);
+        this.w = ((SparseVector) o.readObject()).toDenseVector(sizeHash);
+        this.sumGradient = ((SparseVector) o.readObject()).toDenseVector(sizeHash);
+        this.sumSquaredGradient = ((SparseVector) o.readObject()).toDenseVector(sizeHash);
+        this.maxFeature = ((SparseVector) o.readObject()).toDenseVector(sizeHash);
+        this.eta = ((SparseVector) o.readObject()).toDenseVector(sizeHash);
     }
 }
